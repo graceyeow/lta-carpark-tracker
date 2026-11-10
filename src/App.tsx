@@ -94,11 +94,11 @@ export default function App() {
       const result = await CarparkService.fetchLiveDataGovSg(carparks);
       setCarparks(result.updatedCarparks);
       setLastUpdated(new Date());
-      if (result.liveCount > 0) {
-        setLiveApiSource(`Data.gov.sg (${result.liveCount} live sites)`);
-      } else {
-        setLiveApiSource('Singapore EPS Live Stream');
-      }
+      setLiveApiSource(
+        result.liveCount > 0 
+          ? `${result.source} (${result.liveCount} live sites)` 
+          : result.source
+      );
     } catch (e) {
       console.error('Error refreshing lots:', e);
     } finally {

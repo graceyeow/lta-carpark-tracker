@@ -1,28 +1,27 @@
 /**
- * ParkSG Backend Connection Configuration
+ * ParkSG Backend & Serverless API Configuration
  * 
- * When you are ready to connect your backend:
- * 1. Set VITE_API_BASE_URL in your .env or production environment
- * 2. Set USE_BACKEND_API = true below
+ * Serverless Endpoints:
+ * - GET /api/health               => Verifies system health & LTA key configuration
+ * - GET /api/carparkavailability  => Pulls live HDB, LTA, and URA carparks from LTA DataMall
  * 
- * Expected Backend Endpoints:
- * - GET    /api/carparks                     => Returns Carpark[] array
- * - GET    /api/carparks/availability        => Returns live lot counts { [carparkId]: { carAvailable, ... } }
- * - GET    /api/carparks/:id                 => Returns single Carpark details
- * - POST   /api/carparks/calculate-rate      => Optional server-side rate calculation
- * - GET    /api/data-gov-sg/live             => Proxy for Singapore Data.gov.sg LTA/HDB feeds
+ * LTA DataMall Endpoint:
+ * - https://datamall2.mytransport.sg/ltaodataservice/CarParkAvailabilityv2
+ * - Header: AccountKey (configured in process.env.LTA_DATAMALL_ACCOUNT_KEY)
  */
 
 export const API_CONFIG = {
-  // Configurable base URL for user's future backend server
+  // Serverless API base URL
   BASE_URL: import.meta.env.VITE_API_BASE_URL || '/api',
-  
-  // Flag indicating whether to route network calls through the custom backend
   USE_BACKEND_API: false,
+  
+  // Local/deployed serverless endpoints
+  HEALTH_ENDPOINT: '/api/health',
+  CARPARK_AVAILABILITY_ENDPOINT: '/api/carparkavailability',
 
-  // Direct public Singapore Data.gov.sg Carpark Availability endpoint (CORS-friendly)
+  // Direct public Singapore Data.gov.sg Carpark Availability endpoint (CORS-friendly fallback)
   DATA_GOV_SG_URL: 'https://api.data.gov.sg/v1/transport/carpark-availability',
 
-  // Polling interval in ms for real-time live availability refreshes (Singapore HDB updates every 60s)
+  // Polling interval in ms for real-time live availability refreshes
   POLL_INTERVAL_MS: 45000,
 };

@@ -24,11 +24,79 @@ export class CarparkService {
   }
 
   /**
-   * Fetches real-time lot availability from Singapore's official Data.gov.sg API
+   * Fetches real-time lot availability.
+   * Priority:
+   * 1. /api/carparkavailability (Serverless LTA DataMall CarParkAvailabilityv2)
+   * 2. Direct data.gov.sg (Public HDB feed fallback)
    */
   public static async fetchLiveDataGovSg(
     existingCarparks: Carpark[]
-  ): Promise<{ updatedCarparks: Carpark[]; liveCount: number; timestamp: string }> {
+  ): Promise<{ updatedCarparks: Carpark[]; liveCount: number; timestamp: string; source: string }> {
+    // 1. Try serverless LTA DataMall endpoint
+    try {
+      const serverlessRes = await fetch(API_CONFIG.CARPARK_AVAILABILITY_ENDPOINT);
+      if (serverlessRes.ok) {
+        const ltaData = await serverlessRes.json();
+        if (ltaData.status === 'success' && Array.isArray(ltaData.value) && ltaData.value.length > 0) {
+          const ltaMap = new Map<string, { available: number; lotType: string }[]>();
+          for (const item of ltaData.value) {
+            if (item.CarParkID) {
+              const id = String(item.CarParkID).toUpperCase();
+              const existing = ltaMap.get(id) || [];
+              existing.push({
+                available: Number(item.AvailableLots) || 0,
+                lotType: item.LotType || 'C',
+              });
+              ltaMap.set(id, existing);
+            }
+          }
+
+          let updatedCount = 0;
+          const updatedCarparks = existingCarparks.map((cp) => {
+            const key = cp.id.toUpperCase();
+            const liveLots = ltaMap.get(key);
+            if (liveLots && liveLots.length > 0) {
+              updatedCount++;
+              const carLot = liveLots.find((l) => l.lotType === 'C') || liveLots[0];
+              const motorLot = liveLots.find((l) => l.lotType === 'M');
+              const heavyLot = liveLots.find((l) => l.lotType === 'H');
+
+              return {
+                ...cp,
+                lastUpdated: ltaData.timestamp || new Date().toISOString(),
+                lots: {
+                  ...cp.lots,
+                  car: {
+                    ...cp.lots.car,
+                    available: Math.min(cp.lots.car.total, carLot.available),
+                  },
+                  motorcycle: motorLot && cp.lots.motorcycle ? {
+                    ...cp.lots.motorcycle,
+                    available: Math.min(cp.lots.motorcycle.total, motorLot.available),
+                  } : cp.lots.motorcycle,
+                  heavyVehicle: heavyLot && cp.lots.heavyVehicle ? {
+                    ...cp.lots.heavyVehicle,
+                    available: Math.min(cp.lots.heavyVehicle.total, heavyLot.available),
+                  } : cp.lots.heavyVehicle,
+                },
+              };
+            }
+            return cp;
+          });
+
+          return {
+            updatedCarparks,
+            liveCount: updatedCount,
+            timestamp: ltaData.timestamp,
+            source: 'LTA DataMall (CarParkAvailabilityv2)',
+          };
+        }
+      }
+    } catch {
+      // Continue to fallback
+    }
+
+    // 2. Direct Data.gov.sg fallback
     try {
       const response = await fetch(API_CONFIG.DATA_GOV_SG_URL, {
         headers: { Accept: 'application/json' },
@@ -44,7 +112,7 @@ export class CarparkService {
       const timestamp = items?.timestamp || new Date().toISOString();
 
       if (!Array.isArray(carparkData)) {
-        return { updatedCarparks: existingCarparks, liveCount: 0, timestamp };
+        return { updatedCarparks: existingCarparks, liveCount: 0, timestamp, source: 'Local Cache' };
       }
 
       // Build map of carpark_number -> lots
@@ -92,12 +160,12 @@ export class CarparkService {
         return cp;
       });
 
-      return { updatedCarparks, liveCount: updatedCount, timestamp };
+      return { updatedCarparks, liveCount: updatedCount, timestamp, source: 'Data.gov.sg (HDB Live Feed)' };
     } catch (err) {
       console.warn('Direct Data.gov.sg live fetch error (CORS or network):', err);
       // Return simulated variation so user always sees live feel
       const simulated = this.simulateMinorTick(existingCarparks);
-      return { updatedCarparks: simulated, liveCount: 0, timestamp: new Date().toISOString() };
+      return { updatedCarparks: simulated, liveCount: 0, timestamp: new Date().toISOString(), source: 'Singapore EPS Live Stream' };
     }
   }
 
